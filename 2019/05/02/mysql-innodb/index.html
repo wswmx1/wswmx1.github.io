@@ -1,0 +1,224 @@
+
+<!DOCTYPE html>
+<html lang class="loading">
+<head><meta name="generator" content="Hexo 3.8.0">
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>mysql-innodb引擎锁的实现及机制 - xiaohetu</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="google" content="notranslate">
+    <meta name="keywords" content="xiaohetu,"> 
+    <meta name="description" content="mysql -innodb 引擎锁的机制事务四大特征12345隔离性：一个事务在未完成操作的时候， 对于外界其他事务是不可见的(一般设定为不可见)一致性：多次访问数据，都是同一数据持久性：事务在做修,"> 
+    <meta name="author" content="sum"> 
+    <link rel="alternative" href="atom.xml" title="xiaohetu" type="application/atom+xml"> 
+    <link rel="icon" href="/img/favicon.png"> 
+    <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.css">
+    <link rel="stylesheet" href="/css/diaspora.css">
+    <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+    <script>
+         (adsbygoogle = window.adsbygoogle || []).push({
+              google_ad_client: "ca-pub-8691406134231910",
+              enable_page_level_ads: true
+         });
+    </script>
+    <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js">
+    </script>
+</head>
+</html>
+<body class="loading">
+    <span id="config-title" style="display:none">xiaohetu</span>
+    <div id="loader"></div>
+    <div id="single">
+    <div id="top" style="display: block;">
+    <div class="bar" style="width: 0;"></div>
+    <a class="icon-home image-icon" href="javascript:;" data-url="http://xiaohetu.cn"></a>
+    <div title="播放/暂停" class="icon-play"></div>
+    <h3 class="subtitle">mysql-innodb引擎锁的实现及机制</h3>
+    <div class="social">
+        <!--<div class="like-icon">-->
+            <!--<a href="javascript:;" class="likeThis active"><span class="icon-like"></span><span class="count">76</span></a>-->
+        <!--</div>-->
+        <div>
+            <div class="share">
+                <a title="获取二维码" class="icon-scan" href="javascript:;"></a>
+            </div>
+            <div id="qr"></div>
+        </div>
+    </div>
+    <div class="scrollbar"></div>
+</div>
+
+    <div class="section">
+        <div class="article">
+    <div class="main">
+        <h1 class="title">mysql-innodb引擎锁的实现及机制</h1>
+        <div class="stuff">
+            <span>五月 02, 2019</span>
+            
+
+        </div>
+        <div class="content markdown">
+            <h2 id="mysql-innodb-引擎锁的机制"><a href="#mysql-innodb-引擎锁的机制" class="headerlink" title="mysql -innodb 引擎锁的机制"></a>mysql -innodb 引擎锁的机制</h2><h2 id="事务四大特征"><a href="#事务四大特征" class="headerlink" title="事务四大特征"></a>事务四大特征</h2><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">隔离性：一个事务在未完成操作的时候， 对于外界其他事务是不可见的(一般设定为不可见)</span><br><span class="line"></span><br><span class="line">一致性：多次访问数据，都是同一数据</span><br><span class="line"></span><br><span class="line">持久性：事务在做修改后，应该永久保存，而不应该因为意外导致数据的丢失</span><br></pre></td></tr></table></figure>
+<h2 id="事物并发带来的问题"><a href="#事物并发带来的问题" class="headerlink" title="事物并发带来的问题"></a>事物并发带来的问题</h2><font face="黑体" color="#DC143C" size="5">脏读</font>            
+
+<p>​    事物A 读到事物B未提交的数据</p>
+<font face="黑体" color="#DC143C" size="5">不可重复读</font>    
+
+<p>​    事物A在读取某一条数据的时候，事物B在A执行的过程中 修改了数据。导致事务A两次读到的据不一样</p>
+<font face="黑体" color="#DC143C" size="5">幻读</font>          
+
+<p> 事务B在事务A读取数据的时候，新增一行，导致事物A两次读取数量不一样</p>
+<hr>
+<h5 id="事务的四种隔离级别"><a href="#事务的四种隔离级别" class="headerlink" title="事务的四种隔离级别"></a>事务的四种隔离级别</h5><h4 id="sql-92-ANSI-ISO标准"><a href="#sql-92-ANSI-ISO标准" class="headerlink" title="sql 92 ANSI/ISO标准"></a>sql 92 ANSI/ISO标准</h4><font face="黑体" color="#DC143C" size="5">Read Uncommitted（未提交读）</font> : 事物未提交 对其他事物是可见的， 会引发脏读问题<br><font face="黑体" color="#DC143C" size="5">Read Committed (提交读) </font>:  一个事物开始之后只能看到自己提交的事物所做的修改<br><font face="黑体" color="#DC143C" size="5">Repeatable Read（可重复读）</font>：多次读取数据是一样的，解决幻读<br><font face="黑体" color="#DC143C" size="5">Serializable（串行化）</font>：最高隔离级别<br>为什么要有锁？<br><font face="黑体" color="#00FFFF" size="3">是对不同事物对于共享资源的并发访问的管理,解决在高并发下面的脏读，幻读，不可重复读</font>
+
+<h4 id="mysql-innodb锁类型"><a href="#mysql-innodb锁类型" class="headerlink" title="mysql innodb锁类型"></a>mysql innodb锁类型</h4><h5 id="共享锁："><a href="#共享锁：" class="headerlink" title="共享锁："></a>共享锁：</h5><p>允许持锁事务读取一行（也就是多个事务对于同一个数据可以共享一把锁都能访问到数据，但是只能读不能修改）</p>
+<p>–事务A</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0</span><br><span class="line">BEGIN</span><br><span class="line">SELECT *FROM t_user WHERE id=2 LOCK IN SHARE MODE</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<p>–事务B</p>
+<figure class="highlight plain"><figcaption><span>autocommit</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0</span><br><span class="line">BEGIN</span><br><span class="line">BEGINUPDATE t_user set `password`=&apos;1&apos; WHERE id=2</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<hr>
+<h5 id="排它锁-："><a href="#排它锁-：" class="headerlink" title="排它锁 ："></a>排它锁 ：</h5><p>​    允许持锁事务更新或者删除一行（一个事物获取了一个数据行的排他锁，其他事务就不能再获取该锁，只有获取当前数据排他锁的事务可以对他进行，操作删除操作，其他事务读取数据可以来自快照）</p>
+<p>排他锁加锁方式：</p>
+<p>​    删除， 更新语句都会默认在后面加上 排他锁  （手动加for update）</p>
+<p>举例1：</p>
+<p>事务A</p>
+<figure class="highlight plain"><figcaption><span>autocommit</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0</span><br><span class="line">BEGIN</span><br><span class="line">UPDATE t_user set `password`=&apos;5&apos; WHERE id=1</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<p>事务B</p>
+<figure class="highlight plain"><figcaption><span>autocommit</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0</span><br><span class="line">BEGIN</span><br><span class="line">UPDATE t_user set `password`=&apos;8&apos; WHERE id=1</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">举例2：</span><br><span class="line"></span><br><span class="line">--事务A</span><br></pre></td></tr></table></figure>
+<p>set autocommit=0<br>BEGIN<br>UPDATE t_user set <code>password</code>=’5’ WHERE username=’小花’<br>ROLLBACK<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">--事务B：</span><br><span class="line"></span><br><span class="line">```BEGIN </span><br><span class="line">set autocommit=0</span><br><span class="line">BEGIN</span><br><span class="line">UPDATE t_user set `password`=&apos;7&apos; WHERE id=2</span><br><span class="line">COMMIT</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure></p>
+<p>​        例1通过id为条件进行操作，例2是通过普通列，不是通过索引项来作为条件，通过结果可以看出Innodb 加锁是通过给索引上索引项来加锁， 而没有索引的则是锁住所有的数据行（<font face="黑体" color="red" size="3">这里结果没有截图出来，可以直接复制语句进行验证</font>）</p>
+<hr>
+<h5 id="意向排它锁"><a href="#意向排它锁" class="headerlink" title="意向排它锁"></a>意向排它锁</h5><p>​    表示事务准备给数据行加入排他锁之前，即一个数据行加锁前必须先获得该表的IX锁</p>
+<h5 id="意向共享锁"><a href="#意向共享锁" class="headerlink" title="意向共享锁"></a>意向共享锁</h5><p>​    表示准备给数据和加入共享锁，即一个数据加共享锁前必须先取得该表的IS锁</p>
+<font face="黑体" color="red" size="4"> 这两个锁都是Innodb 对数据操作之前自动加的，不需要用户干预</font>
+
+<p>意义：当事务想进行锁表时，可以先判断意向锁是否存在，存在则可以快速返回该表不能启用表锁 </p>
+<hr>
+<h4 id="锁的算法"><a href="#锁的算法" class="headerlink" title="锁的算法"></a>锁的算法</h4><h5 id="间隙锁"><a href="#间隙锁" class="headerlink" title="间隙锁"></a>间隙锁</h5><p>举例：</p>
+<p>–事务A</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0;</span><br><span class="line">BEGIN </span><br><span class="line">SELECT *FROM t_user WHERE id &gt;5 and id &lt;9</span><br><span class="line">for update;</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<p>–事务B</p>
+<figure class="highlight plain"><figcaption><span>autocommit</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0;</span><br><span class="line">BEGIN </span><br><span class="line">INSERT INTO t_user (id,username,`password`) VALUES(8,&quot;xx&quot;,15)</span><br><span class="line">DELETE FROM t_user WHERE id =11</span><br><span class="line">for update;</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<font face="黑体" color="red" size="5">这里贴出表的结构</font>
+
+<p><img src="D:\mysql-index\t_user.png" alt="1556800402879"></p>
+<p>从上面可以看出 事务在没commit 和ROLLBACK之前 是锁住了 4到10 的区间，在这个区间其他事务不能进行修改删除操作</p>
+<hr>
+<h5 id="临键锁"><a href="#临键锁" class="headerlink" title="临键锁"></a>临键锁</h5><p>–事务A</p>
+<figure class="highlight plain"><figcaption><span>autocommit</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0;</span><br><span class="line">BEGIN </span><br><span class="line">SELECT *FROM t_user WHERE id &gt;5 and id &lt;9</span><br><span class="line">for update;</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<p>–事务B</p>
+<figure class="highlight plain"><figcaption><span>autocommit</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">set autocommit=0;</span><br><span class="line">BEGIN </span><br><span class="line">INSERT INTO t_user (id,username,`password`) VALUES(11,&quot;xx&quot;,15)</span><br><span class="line">DELETE FROM t_user WHERE id=7</span><br><span class="line">COMMIT</span><br><span class="line">ROLLBACK</span><br></pre></td></tr></table></figure>
+<p>还是看上面的表结构，然后通过执行的结果可以看出，临键锁锁的是本区间+下一个区间</p>
+<h5 id="记录锁"><a href="#记录锁" class="headerlink" title="记录锁"></a>记录锁</h5><p>​    是以 唯一性（主键或者唯一索引），条件为精准匹配退化成Record锁也就是锁定的是某一行（这个就不做演示了）</p>
+<hr>
+<h4 id="这些锁都解决了什么问题？"><a href="#这些锁都解决了什么问题？" class="headerlink" title="这些锁都解决了什么问题？"></a>这些锁都解决了什么问题？</h4><ul>
+<li><p>x锁解决了 脏读问题</p>
+</li>
+<li><p>s锁 解决了不可重复读</p>
+</li>
+<li><p>临键锁 解决了幻读的问题</p>
+</li>
+</ul>
+<h4 id="Innodb引擎的优势："><a href="#Innodb引擎的优势：" class="headerlink" title="Innodb引擎的优势："></a>Innodb引擎的优势：</h4><ul>
+<li><p>它的DMl 操作遵循ACID模型，具有提交，回滚和崩溃恢复功能的事务来保证用户数据</p>
+</li>
+<li><p>支持事务</p>
+</li>
+<li><p>行级锁、表锁：通过索引实现，全表扫描时也会锁定整个表</p>
+</li>
+<li><p>高效的 缓存性能，能缓存索引和数据</p>
+</li>
+<li><p>支持MVCC(mvcc将在下篇文章进行分析)适用于高并发场景</p>
+</li>
+</ul>
+
+            <!--[if lt IE 9]><script>document.createElement('audio');</script><![endif]-->
+            <audio id="audio" loop="1" preload="auto" controls="controls" data-autoplay="false">
+                <source type="audio/mpeg" src>
+            </audio>
+            
+                <ul id="audio-list" style="display:none">
+                    
+                        <li title="0" data-url="http://link.hhtjim.com/163/5146554.mp3"></li>
+                    
+                        <li title="1" data-url="http://link.hhtjim.com/qq/001faIUs4M2zna.mp3"></li>
+                    
+                </ul>
+            
+        </div>
+        
+    <div id="gitalk-container" class="comment link" data-ae="false" data-ci data-cs data-r data-o data-a data-d="false">查看评论</div>
+
+
+    </div>
+    
+</div>
+
+
+    </div>
+</div>
+</body>
+<script src="//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.js"></script>
+<script src="//lib.baomitu.com/jquery/1.8.3/jquery.min.js"></script>
+<script src="/js/plugin.js"></script>
+<script src="/js/diaspora.js"></script>
+<link rel="stylesheet" href="/photoswipe/photoswipe.css">
+<link rel="stylesheet" href="/photoswipe/default-skin/default-skin.css">
+<script src="/photoswipe/photoswipe.min.js"></script>
+<script src="/photoswipe/photoswipe-ui-default.min.js"></script>
+
+<!-- Root element of PhotoSwipe. Must have class pswp. -->
+<div class="pswp" tabindex="-1" role="dialog" aria-hidden="true">
+    <!-- Background of PhotoSwipe. 
+         It's a separate element as animating opacity is faster than rgba(). -->
+    <div class="pswp__bg"></div>
+    <!-- Slides wrapper with overflow:hidden. -->
+    <div class="pswp__scroll-wrap">
+        <!-- Container that holds slides. 
+            PhotoSwipe keeps only 3 of them in the DOM to save memory.
+            Don't modify these 3 pswp__item elements, data is added later on. -->
+        <div class="pswp__container">
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+        </div>
+        <!-- Default (PhotoSwipeUI_Default) interface on top of sliding area. Can be changed. -->
+        <div class="pswp__ui pswp__ui--hidden">
+            <div class="pswp__top-bar">
+                <!--  Controls are self-explanatory. Order can be changed. -->
+                <div class="pswp__counter"></div>
+                <button class="pswp__button pswp__button--close" title="Close (Esc)"></button>
+                <button class="pswp__button pswp__button--share" title="Share"></button>
+                <button class="pswp__button pswp__button--fs" title="Toggle fullscreen"></button>
+                <button class="pswp__button pswp__button--zoom" title="Zoom in/out"></button>
+                <!-- Preloader demo http://codepen.io/dimsemenov/pen/yyBWoR -->
+                <!-- element will get class pswp__preloader--active when preloader is running -->
+                <div class="pswp__preloader">
+                    <div class="pswp__preloader__icn">
+                      <div class="pswp__preloader__cut">
+                        <div class="pswp__preloader__donut"></div>
+                      </div>
+                    </div>
+                </div>
+            </div>
+            <div class="pswp__share-modal pswp__share-modal--hidden pswp__single-tap">
+                <div class="pswp__share-tooltip"></div> 
+            </div>
+            <button class="pswp__button pswp__button--arrow--left" title="Previous (arrow left)">
+            </button>
+            <button class="pswp__button pswp__button--arrow--right" title="Next (arrow right)">
+            </button>
+            <div class="pswp__caption">
+                <div class="pswp__caption__center"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+</html>

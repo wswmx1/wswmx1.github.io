@@ -1,0 +1,201 @@
+
+<!DOCTYPE html>
+<html lang class="loading">
+<head><meta name="generator" content="Hexo 3.8.0">
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>mysql之索引篇 - xiaohetu</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="google" content="notranslate">
+    <meta name="keywords" content="xiaohetu,"> 
+    <meta name="description" content="mysql 之索引篇索引1为了加速数据检索 减少磁盘io操作 而创建的一种分散存储的数据结构。索引是由各大引擎来实现的
+普通二叉树12普通二叉树由于本身存储的特性， 会造成高瘦的这种情况， 而我们要,"> 
+    <meta name="author" content="sum"> 
+    <link rel="alternative" href="atom.xml" title="xiaohetu" type="application/atom+xml"> 
+    <link rel="icon" href="/img/favicon.png"> 
+    <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.css">
+    <link rel="stylesheet" href="/css/diaspora.css">
+    <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+    <script>
+         (adsbygoogle = window.adsbygoogle || []).push({
+              google_ad_client: "ca-pub-8691406134231910",
+              enable_page_level_ads: true
+         });
+    </script>
+    <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js">
+    </script>
+</head>
+</html>
+<body class="loading">
+    <span id="config-title" style="display:none">xiaohetu</span>
+    <div id="loader"></div>
+    <div id="single">
+    <div id="top" style="display: block;">
+    <div class="bar" style="width: 0;"></div>
+    <a class="icon-home image-icon" href="javascript:;" data-url="http://xiaohetu.cn"></a>
+    <div title="播放/暂停" class="icon-play"></div>
+    <h3 class="subtitle">mysql之索引篇</h3>
+    <div class="social">
+        <!--<div class="like-icon">-->
+            <!--<a href="javascript:;" class="likeThis active"><span class="icon-like"></span><span class="count">76</span></a>-->
+        <!--</div>-->
+        <div>
+            <div class="share">
+                <a title="获取二维码" class="icon-scan" href="javascript:;"></a>
+            </div>
+            <div id="qr"></div>
+        </div>
+    </div>
+    <div class="scrollbar"></div>
+</div>
+
+    <div class="section">
+        <div class="article">
+    <div class="main">
+        <h1 class="title">mysql之索引篇</h1>
+        <div class="stuff">
+            <span>五月 02, 2019</span>
+            
+
+        </div>
+        <div class="content markdown">
+            <h1 id="mysql-之索引篇"><a href="#mysql-之索引篇" class="headerlink" title="mysql 之索引篇"></a>mysql 之索引篇</h1><h3 id="索引"><a href="#索引" class="headerlink" title="索引"></a>索引</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">为了加速数据检索 减少磁盘io操作 而创建的一种分散存储的数据结构。索引是由各大引擎来实现的</span><br></pre></td></tr></table></figure>
+<h2 id="普通二叉树"><a href="#普通二叉树" class="headerlink" title="普通二叉树"></a>普通二叉树</h2><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">普通二叉树由于本身存储的特性， 会造成高瘦的这种情况， 而我们要的是矮胖，这样在查询数据的时候，</span><br><span class="line">才能更快找到数据。高瘦的话  层次太深了不利于查找。</span><br></pre></td></tr></table></figure>
+<h2 id="平衡二叉查找树"><a href="#平衡二叉查找树" class="headerlink" title="平衡二叉查找树"></a>平衡二叉查找树</h2><p><img src="https://xiaohetu-1259152752.cos.ap-chengdu.myqcloud.com/avl%E6%A0%91.png" alt="1555778751715"></p>
+ <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">	左子节点和右子节点高度差不能超过1,超过就会进行旋转 来保持两个节点之间的高度差,</span><br><span class="line"></span><br><span class="line">这个方案很好的解决了二叉树退化成链表的问题，把插入，查找，删除的时间复杂度最好情况和</span><br><span class="line"></span><br><span class="line">最坏情况都维持在O(logN)。但是频繁旋转会使插入和删除牺牲掉O(logN)左右的时间，</span><br><span class="line"></span><br><span class="line">不过相对二叉查找树来说，时间上稳定了很多。</span><br></pre></td></tr></table></figure>
+<p>但是这种数据结构在mysql里面还是不能满足， 因为每个节点 存放一个关键字 加上数据区 再加上子节点引用</p>
+<p><img src="https://xiaohetu-1259152752.cos.ap-chengdu.myqcloud.com/avl-mysql.png" alt="1555779717777"></p>
+<p><strong><em>造成的缺点</em></strong></p>
+<p>  <code>最坏情况下磁盘的IO次数由树的高度决定，所以减少磁盘IO次数就必须压缩树的高度，让瘦高的树尽量变成矮胖的树，这样B-树就诞生了</code></p>
+<h3 id="B-树"><a href="#B-树" class="headerlink" title="B-树"></a>B-树</h3><p>多路平衡查找树：它在平衡二叉树的基础上做了增强。</p>
+<pre><code>数中每个节点之多有m个孩子(m&gt;2)
+
+根结点至少拥有两颗子树（存在子树的情况下）
+
+除了根结点以外，其余每个分支结点至少拥有 m/2 棵子树
+
+所有的叶节点都在同一层上
+</code></pre><p>如图：</p>
+<p><img src="https://xiaohetu-1259152752.cos.ap-chengdu.myqcloud.com/avl-mysql.png" alt="1555781151314">    </p>
+<p>  B-树的搜索，从根结点开始，对结点内的关键字（有序）序列进行二分查找，如果</p>
+<p>命中则结束，否则进入查询关键字所属范围的儿子结点；重复，直到所对应的儿子指针为</p>
+<p>空，或已经是叶子结点</p>
+<h3 id="b-Tree"><a href="#b-Tree" class="headerlink" title="b+Tree"></a>b+Tree</h3><p>1.任何一个关键字出现且只出现在一个结点中；</p>
+<p>2.搜索有可能在非叶子结点结束；</p>
+<p>3.其搜索性能等价于在关键字全集内做一次二分查找；</p>
+<p>但是这种还是不能满足mysql的要求于是就出现了b+树</p>
+<p>B+树 可以看成是B-树的 加强版</p>
+<p>如图：</p>
+<p><img src="https://xiaohetu-1259152752.cos.ap-chengdu.myqcloud.com/b%2B%E6%A0%91.png" alt="1555781384296"></p>
+<p>B+树和B-树的区别</p>
+<p>B+树关键字搜索采用闭合区间</p>
+<p>B+ 非叶节点不保存数据相关信息，只保存关键字和子节点的引用</p>
+<p>B+ 关键字对应的数据保存在叶子节点中</p>
+<p>叶子节点是顺序排列的，相邻的节点具有顺序应用关系</p>
+<p>相比B-树的优点：</p>
+<p>扫表能力强</p>
+<p>磁盘读写能力强</p>
+<p>排序能力更强</p>
+<p>查询效率更稳定</p>
+<p>B+树 在Myisam中B+树体现形式：</p>
+<p>如图：</p>
+<p><img src="https://xiaohetu-1259152752.cos.ap-chengdu.myqcloud.com/B%2B%E6%A0%91myisam.png" alt="1555782098015"></p>
+<p>主键索引和辅助索引都会有一个指针指向数据区， 为什么是这样存储，这是跟myisam的数据存储有关系的。</p>
+<p>myisam中 索引 和数据都有一个单独文件存储</p>
+<p>B+树 在在Inodb中B+树体现形式:</p>
+<p><img src="https://xiaohetu-1259152752.cos.ap-chengdu.myqcloud.com/B%2B%E6%A0%91Innodb.png" alt="1555782185017"></p>
+<p>索引相关知识补充：</p>
+<p>1.每张表的索引 不超过5个</p>
+<p>2.索引字段宽度尽量短</p>
+<p>3.使用离散度高的列作为索引</p>
+<p>4.经常用的列优先(组合索引。最左匹配索引)</p>
+
+            <!--[if lt IE 9]><script>document.createElement('audio');</script><![endif]-->
+            <audio id="audio" loop="1" preload="auto" controls="controls" data-autoplay="false">
+                <source type="audio/mpeg" src>
+            </audio>
+            
+                <ul id="audio-list" style="display:none">
+                    
+                        <li title="0" data-url="http://link.hhtjim.com/163/5146554.mp3"></li>
+                    
+                        <li title="1" data-url="http://link.hhtjim.com/qq/001faIUs4M2zna.mp3"></li>
+                    
+                </ul>
+            
+        </div>
+        
+    <div id="gitalk-container" class="comment link" data-ae="false" data-ci data-cs data-r data-o data-a data-d="false">查看评论</div>
+
+
+    </div>
+    
+</div>
+
+
+    </div>
+</div>
+</body>
+<script src="//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.js"></script>
+<script src="//lib.baomitu.com/jquery/1.8.3/jquery.min.js"></script>
+<script src="/js/plugin.js"></script>
+<script src="/js/diaspora.js"></script>
+<link rel="stylesheet" href="/photoswipe/photoswipe.css">
+<link rel="stylesheet" href="/photoswipe/default-skin/default-skin.css">
+<script src="/photoswipe/photoswipe.min.js"></script>
+<script src="/photoswipe/photoswipe-ui-default.min.js"></script>
+
+<!-- Root element of PhotoSwipe. Must have class pswp. -->
+<div class="pswp" tabindex="-1" role="dialog" aria-hidden="true">
+    <!-- Background of PhotoSwipe. 
+         It's a separate element as animating opacity is faster than rgba(). -->
+    <div class="pswp__bg"></div>
+    <!-- Slides wrapper with overflow:hidden. -->
+    <div class="pswp__scroll-wrap">
+        <!-- Container that holds slides. 
+            PhotoSwipe keeps only 3 of them in the DOM to save memory.
+            Don't modify these 3 pswp__item elements, data is added later on. -->
+        <div class="pswp__container">
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+        </div>
+        <!-- Default (PhotoSwipeUI_Default) interface on top of sliding area. Can be changed. -->
+        <div class="pswp__ui pswp__ui--hidden">
+            <div class="pswp__top-bar">
+                <!--  Controls are self-explanatory. Order can be changed. -->
+                <div class="pswp__counter"></div>
+                <button class="pswp__button pswp__button--close" title="Close (Esc)"></button>
+                <button class="pswp__button pswp__button--share" title="Share"></button>
+                <button class="pswp__button pswp__button--fs" title="Toggle fullscreen"></button>
+                <button class="pswp__button pswp__button--zoom" title="Zoom in/out"></button>
+                <!-- Preloader demo http://codepen.io/dimsemenov/pen/yyBWoR -->
+                <!-- element will get class pswp__preloader--active when preloader is running -->
+                <div class="pswp__preloader">
+                    <div class="pswp__preloader__icn">
+                      <div class="pswp__preloader__cut">
+                        <div class="pswp__preloader__donut"></div>
+                      </div>
+                    </div>
+                </div>
+            </div>
+            <div class="pswp__share-modal pswp__share-modal--hidden pswp__single-tap">
+                <div class="pswp__share-tooltip"></div> 
+            </div>
+            <button class="pswp__button pswp__button--arrow--left" title="Previous (arrow left)">
+            </button>
+            <button class="pswp__button pswp__button--arrow--right" title="Next (arrow right)">
+            </button>
+            <div class="pswp__caption">
+                <div class="pswp__caption__center"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+</html>
